@@ -16,7 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ReactMarkdown from 'react-markdown';
-import { apiChatCompletion, apiGenerateImage, apiGenerateTTS } from '@/lib/api';
+import { apiChatCompletion, apiGenerateImage } from '@/lib/api';
+import { PASSAGE_TEXT } from '@/lib/passage';
 
 type ChatMessage = {
   id: string;
@@ -27,7 +28,14 @@ type ChatMessage = {
   timestamp: Date;
 };
 
-type AIActionType = 'chat' | 'summary' | 'explain' | 'suggest' | 'quiz' | 'image' | 'tts';
+type AIActionType =
+  | 'chat'
+  | 'summary'
+  | 'explain'
+  | 'suggest'
+  | 'quiz'
+  | 'image'
+  | 'tts';
 
 const quickActions: {
   label: string;
@@ -62,7 +70,8 @@ const quickActions: {
   {
     label: 'Vẽ minh hoạ',
     icon: ImageIcon,
-    prompt: 'Hãy vẽ một hình ảnh minh hoạ cho đoạn trích "Bài học đường đời đầu tiên".',
+    prompt:
+      'Hãy vẽ một hình ảnh minh hoạ cho đoạn trích "Bài học đường đời đầu tiên".',
     actionType: 'image',
   },
   {
@@ -113,18 +122,21 @@ export default function AIChatPanel() {
           },
         ]);
       } else if (actionType === 'tts') {
-        // TTS generation — read the passage text or the last assistant message
-        const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
-        const textToSpeak = lastAssistantMsg?.content || prompt;
+        // Start reading using browser speechSynthesis
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(PASSAGE_TEXT);
+        utterance.lang = 'vi-VN';
+        utterance.rate = 0.85;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
 
-        const result = await apiGenerateTTS(textToSpeak);
         setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: '🔊 Đây là phiên bản audio:',
-            audioUrl: result.audio || undefined,
+            content:
+              '🔊 Đang đọc to đoạn trích "Bài học đường đời đầu tiên".\n\nBạn có thể chat:\n- **"tạm dừng"** để tạm dừng\n- **"tiếp tục"** để đọc tiếp\n- **"dừng lại"** để dừng hẳn',
             timestamp: new Date(),
           },
         ]);
@@ -150,6 +162,60 @@ export default function AIChatPanel() {
     }
   };
 
+  // Detect audio control intent from chat message (keyword-only, no state gating)
+  const detectAudioCommand = (
+    text: string,
+  ): 'pause' | 'resume' | 'stop' | 'play' | null => {
+    const lower = text.toLowerCase();
+
+    // PAUSE: "tạm dừng", "pause"
+    if (
+      lower.includes('tạm dừng') ||
+      lower.includes('pause') ||
+      (lower.includes('dừng') && lower.includes('tạm'))
+    ) {
+      return 'pause';
+    }
+
+    // RESUME: "tiếp tục", "đọc tiếp", "continue", "resume"
+    if (
+      lower.includes('tiếp tục') ||
+      lower.includes('đọc tiếp') ||
+      lower.includes('continue') ||
+      lower.includes('resume')
+    ) {
+      return 'resume';
+    }
+
+    // STOP: "dừng lại", "dừng hẳn", "stop", "tắt", "ngừng"
+    if (
+      lower.includes('dừng lại') ||
+      lower.includes('dừng hẳn') ||
+      lower.includes('stop') ||
+      lower.includes('tắt') ||
+      lower.includes('ngừng')
+    ) {
+      return 'stop';
+    }
+
+    // Generic "dừng" (without "tạm") → stop
+    if (lower.includes('dừng') && !lower.includes('tạm')) {
+      return 'stop';
+    }
+
+    // PLAY: "đọc to", "đọc cho", "đọc bài", "read"
+    if (
+      lower.includes('đọc to') ||
+      lower.includes('đọc cho') ||
+      lower.includes('đọc bài') ||
+      lower.includes('read aloud')
+    ) {
+      return 'play';
+    }
+
+    return null;
+  };
+
   const handleSend = () => {
     if (!input.trim()) return;
     const userMsg: ChatMessage = {
@@ -162,12 +228,50 @@ export default function AIChatPanel() {
     const prompt = input;
     setInput('');
 
+    // Check if user wants to control audio via chat
+    const audioCmd = detectAudioCommand(prompt);
+    if (audioCmd) {
+      const synth = window.speechSynthesis;
+      let response = '';
+      switch (audioCmd) {
+        case 'pause':
+          synth.pause();
+          response = '⏸️ Đã tạm dừng đọc! Gõ **"tiếp tục"** để đọc tiếp.';
+          break;
+        case 'resume':
+          synth.resume();
+          response = '▶️ Đang tiếp tục đọc!';
+          break;
+        case 'stop':
+          synth.cancel();
+          response = '⏹️ Đã dừng đọc hoàn toàn!';
+          break;
+        case 'play':
+          fetchAiResponse(prompt, 'tts');
+          return;
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: response,
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
+
     // Auto-detect if user wants an image
     const lowerInput = prompt.toLowerCase();
-    if (lowerInput.includes('vẽ') || lowerInput.includes('hình ảnh') || lowerInput.includes('minh hoạ') || lowerInput.includes('draw') || lowerInput.includes('image')) {
+    if (
+      lowerInput.includes('vẽ') ||
+      lowerInput.includes('hình ảnh') ||
+      lowerInput.includes('minh hoạ') ||
+      lowerInput.includes('draw') ||
+      lowerInput.includes('image')
+    ) {
       fetchAiResponse(prompt, 'image');
-    } else if (lowerInput.includes('đọc to') || lowerInput.includes('đọc cho') || lowerInput.includes('nghe') || lowerInput.includes('read aloud')) {
-      fetchAiResponse(prompt, 'tts');
     } else {
       fetchAiResponse(prompt, 'chat');
     }

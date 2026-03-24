@@ -52,6 +52,12 @@ export default {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
+  		},
+  		keyframes: {
+  			soundwave: {
+  				'0%': { height: '20%' },
+  				'100%': { height: '100%' },
+  			}
   		}
   	}
   },

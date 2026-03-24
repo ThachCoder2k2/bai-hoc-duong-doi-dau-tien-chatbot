@@ -89,14 +89,14 @@ app.post('/api/v1/tts/generate', async (req, res) => {
     console.log(`[tts] Generating audio for: ${text.substring(0, 50)}...`);
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-tts',
+      model: 'gemini-2.5-flash-preview-tts',
       contents: text,
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: {
-              voiceName: 'Kore',
+              voiceName: 'Aoede',
             },
           },
         },
